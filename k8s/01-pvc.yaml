@@ -1,0 +1,15 @@
+# Persists downloaded model weights (large-v3 is ~3GB) so a pod restart
+# doesn't re-download from HuggingFace every time. Adjust storageClassName
+# to whatever's available in your cluster (you're using local-path elsewhere).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fastwhisper-models
+  namespace: sotongpt
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
