@@ -23,7 +23,7 @@ from app.database import async_session_maker
 from app.models import JobStatus, TranscriptionRequest
 from app.whisper_engine import WhisperEngine
 
-logger = logging.getLogger("fastwhisper")
+logger = logging.getLogger("fasterwhisper")
 
 
 @dataclass

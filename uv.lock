@@ -331,7 +331,7 @@ wheels = [
 ]
 
 [[package]]
-name = "fastwhisper-api"
+name = "fasterwhisper-api"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

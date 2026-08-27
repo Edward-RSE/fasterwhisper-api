@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
 
     # --- Service identity ---
-    service_name: str = "fastwhisper-api"
+    service_name: str = "fasterwhisper-api"
     environment: str = "production"
 
     # --- Whisper model ---
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     # --- Uploads ---
     max_upload_mb: int = 500
-    tmp_upload_dir: str = "/tmp/fastwhisper-uploads"
+    tmp_upload_dir: str = "/tmp/fasterwhisper-uploads"
 
     # --- Sync vs async cutover ---
     # Files estimated to run longer than this (by size heuristic) via the
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # from openwebui_database_url above) ---
     # postgresql+asyncpg://user:pass@host:5432/dbname
     database_url: str = (
-        "postgresql+asyncpg://fastwhisper:fastwhisper@localhost:5432/fastwhisper"
+        "postgresql+asyncpg://fasterwhisper:fasterwhisper@localhost:5432/fasterwhisper"
     )
     db_pool_size: int = 5
     db_echo: bool = False

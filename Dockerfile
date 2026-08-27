@@ -36,8 +36,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Model weights are downloaded to whisper_download_root on first run — mount a
 # PVC there (see k8s/deployment.yaml) so a pod restart doesn't re-download a
 # multi-GB model. This directory just needs to exist and be writable.
-RUN mkdir -p /models /tmp/fastwhisper-uploads \
-    && chown -R appuser:appuser /app /models /tmp/fastwhisper-uploads
+RUN mkdir -p /models /tmp/fasterwhisper-uploads \
+    && chown -R appuser:appuser /app /models /tmp/fasterwhisper-uploads
 
 USER appuser
 

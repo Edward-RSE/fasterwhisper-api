@@ -15,7 +15,7 @@ from faster_whisper import WhisperModel
 
 from app.config import Settings
 
-logger = logging.getLogger("fastwhisper")
+logger = logging.getLogger("fasterwhisper")
 
 
 @dataclass

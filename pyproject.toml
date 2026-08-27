@@ -1,5 +1,5 @@
 [project]
-name = "fastwhisper-api"
+name = "fasterwhisper-api"
 version = "1.0.0"
 description = "FastAPI wrapper around faster-whisper for transcription, deployed on SotonGPT"
 readme = "README.md"

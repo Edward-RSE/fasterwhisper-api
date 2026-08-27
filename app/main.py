@@ -24,7 +24,7 @@ from app.schemas import (
 )
 from app.whisper_engine import WhisperEngine
 
-logger = logging.getLogger("fastwhisper")
+logger = logging.getLogger("fasterwhisper")
 
 settings = get_settings()
 configure_logging(settings)
@@ -54,14 +54,14 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Open WebUI key lookup disabled (OPENWEBUI_DATABASE_URL not set)")
 
-    logger.info("fastwhisper-api ready")
+    logger.info("fasterwhisper-api ready")
     yield
     await job_queue.stop()
     await openwebui_keys.close()
 
 
 app = FastAPI(
-    title="FastWhisper API",
+    title="fasterwhisper API",
     description="faster-whisper transcription service (SotonGPT)",
     version="1.0.0",
     lifespan=lifespan,

@@ -1,4 +1,4 @@
-# FastWhisper API
+# fasterwhisper API
 
 **This was vibe coded by Claude.**
 
@@ -83,7 +83,7 @@ API keys directly (see [Authentication](#authentication)). In Open WebUI:
 
 1. Have the user generate a personal API key: **Settings → Account → API keys**.
 2. **Admin Settings → Audio → Speech-to-Text Engine → OpenAI**, then set:
-   - **API Base URL**: `http://fastwhisper-api.sotongpt.svc/v1` (in-cluster) or your ingress URL
+   - **API Base URL**: `http://fasterwhisper-api.sotongpt.svc/v1` (in-cluster) or your ingress URL
    - **API Key**: the key from step 1
    - **Model**: any value — this service ignores the model field and always uses whichever model
      it loaded (`WHISPER_MODEL`)
@@ -117,8 +117,8 @@ both). To pick up upstream version bumps within the pins in `pyproject.toml`: `u
 ## Building the image
 
 ```bash
-docker build -t <registry>/fastwhisper-api:latest .
-docker push <registry>/fastwhisper-api:latest
+docker build -t <registry>/fasterwhisper-api:latest .
+docker push <registry>/fasterwhisper-api:latest
 ```
 
 The image installs dependencies with `uv sync --frozen` against the committed `uv.lock`, so the
@@ -131,12 +131,12 @@ Manifests in `k8s/` assume deployment into the existing `sotongpt` namespace, re
 `postgres-cnpg` cluster already running there (same pattern as the `openwebui` database) rather
 than standing up a separate Postgres instance.
 
-1. On `postgres-cnpg`, create a `fastwhisper` database/role for this service's own metadata (a
+1. On `postgres-cnpg`, create a `fasterwhisper` database/role for this service's own metadata (a
    CNPG `Database` custom resource, the same way `openwebui`'s database was provisioned).
 2. On the same cluster, create a **read-only** role against the existing `openwebui` database for
    the API key lookup — the exact grants are commented in `k8s/00-config.yaml`.
 3. Edit `k8s/00-config.yaml` — fill in real `API_KEYS_RAW` (if you need any static keys at all),
-   the `fastwhisper` role's password in `DATABASE_URL`, and the read-only role's password in
+   the `fasterwhisper` role's password in `DATABASE_URL`, and the read-only role's password in
    `OPENWEBUI_DATABASE_URL`. Don't commit real values; apply this one out-of-band or via a secrets
    manager.
 4. Edit `k8s/02-deployment.yaml` — set `image:` to your pushed image.
@@ -153,8 +153,8 @@ than standing up a separate Postgres instance.
 7. Check rollout:
 
    ```bash
-   kubectl -n sotongpt rollout status deploy/fastwhisper-api
-   kubectl -n sotongpt logs -f deploy/fastwhisper-api
+   kubectl -n sotongpt rollout status deploy/fasterwhisper-api
+   kubectl -n sotongpt logs -f deploy/fasterwhisper-api
    ```
 
 8. Check `/health` — its `openwebui_auth` field confirms the read-only connection to Open WebUI's
@@ -166,7 +166,7 @@ Expect a short gap in availability on every deploy as a result — fine for an i
 worth knowing about.
 
 No ingress/route is included since that depends on what you're already using in front of
-`openwebui` — add a matching one pointing at the `fastwhisper-api` Service if you need external
+`openwebui` — add a matching one pointing at the `fasterwhisper-api` Service if you need external
 access rather than in-cluster only.
 
 ## What's deliberately not here
