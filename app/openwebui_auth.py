@@ -1,7 +1,7 @@
 """
-Lets Open WebUI's own personal API keys authenticate against this service,
-by reading Open WebUI's `api_key` table directly — no key management here,
-no shared secret to distribute. Schema (Open WebUI >= 0.6.x, Postgres):
+Lets Open WebUI's own personal API keys authenticate against this service —
+no key management here, no shared secret to distribute. Reads Open WebUI's
+api_key table directly (joined to "user" for an email/name label):
 
     CREATE TABLE api_key (
         id TEXT PRIMARY KEY,
@@ -17,9 +17,30 @@ no shared secret to distribute. Schema (Open WebUI >= 0.6.x, Postgres):
 There's no `is_active`/`enabled` column — a key counts as active if it exists
 and isn't expired. We treat that as the definition of "active" here too.
 
-This is a separate database from this service's own `database_url` (which
-just holds transcription_requests). Only a SELECT-level grant is required
-unless openwebui_update_last_used is enabled.
+Currently connects via the shared app role on Open WebUI's database (see
+k8s/secret.yaml), which can read/write everything in that database — not
+just api_key. Worth narrowing later: grant a dedicated read-only role SELECT
+on a single purpose-built view instead of the raw tables, e.g.
+
+    CREATE VIEW fasterwhisper_key_lookup AS
+    SELECT ak.key, ak.user_id, ak.expires_at, u.email, u.name
+    FROM api_key ak
+    LEFT JOIN "user" u ON u.id = ak.user_id;
+
+    GRANT CONNECT ON DATABASE openwebui TO fasterwhisper_ro;
+    GRANT USAGE ON SCHEMA public TO fasterwhisper_ro;
+    GRANT SELECT ON fasterwhisper_key_lookup TO fasterwhisper_ro;
+
+Postgres views run with the view owner's privileges by default, so a role
+scoped to the view would never need direct access to api_key or "user" at
+all — the view's column list becomes the entire contract, immune to whatever
+else Open WebUI's schema does over time. If you switch to this, swap
+_LOOKUP_QUERY below to select from the view instead of joining the tables.
+
+This is a separate database (and, per the recommended setup, a separate CNPG
+cluster) from this service's own `database_url`, which just holds
+transcription_requests. Only a SELECT-level grant is required unless
+openwebui_update_last_used is enabled.
 """
 
 import logging
@@ -62,7 +83,7 @@ class OpenWebUIKeyStore:
         self._settings = settings
         self._engine = (
             create_async_engine(
-                settings.openwebui_database_url,
+                settings.openwebui_database_url_async,
                 pool_size=settings.openwebui_db_pool_size,
                 pool_pre_ping=True,
             )
@@ -114,9 +135,7 @@ class OpenWebUIKeyStore:
         now_epoch = int(time.time())
         try:
             async with self._engine.connect() as conn:
-                result = await conn.execute(
-                    _LOOKUP_QUERY, {"key": key, "now": now_epoch}
-                )
+                result = await conn.execute(_LOOKUP_QUERY, {"key": key, "now": now_epoch})
                 row = result.mappings().first()
         except Exception:
             logger.exception("Error querying Open WebUI database for API key lookup")
@@ -139,9 +158,7 @@ class OpenWebUIKeyStore:
         except Exception:
             # Non-fatal: auth already succeeded on the SELECT above. Most likely
             # cause is a read-only DB grant, which is the recommended setup.
-            logger.warning(
-                "Could not update last_used_at on Open WebUI api_key", exc_info=True
-            )
+            logger.warning("Could not update last_used_at on Open WebUI api_key", exc_info=True)
 
 
 def build_key_store(settings: Settings) -> OpenWebUIKeyStore:

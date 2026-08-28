@@ -34,10 +34,13 @@ one of those. A successful Open WebUI lookup is cached in memory for `OPENWEBUI_
 still work here for up to that long. Both a positive and a negative lookup are cached, so retries
 with a bad key don't repeatedly round-trip either.
 
-The Open WebUI lookup is a plain read against its `api_key` table (joined to `user` for an
-email/name to use as the label in `transcription_requests`/logs) — a read-only DB role is enough.
-It only writes back to that table (`last_used_at`) if you explicitly set
-`OPENWEBUI_UPDATE_LAST_USED=true`, which then needs an `UPDATE` grant too.
+The Open WebUI lookup currently reads `api_key`/`user` directly through the shared `sotongpt` app
+role (see `k8s/secret.yaml`) — that role can read/write everything in `openwebui`, not just
+`api_key`. Worth narrowing later: point a dedicated read-only role at a single purpose-built view
+instead of the raw tables, so this service's access is defined by that view's column list rather
+than by whatever else `openwebui` happens to contain — see the comment in `app/openwebui_auth.py`
+for the exact `CREATE VIEW`/`GRANT` statements. It only writes back to `api_key` (`last_used_at`)
+if you explicitly set `OPENWEBUI_UPDATE_LAST_USED=true`, which needs an `UPDATE` grant too.
 
 If neither `API_KEYS_RAW` nor `OPENWEBUI_DATABASE_URL` is configured, auth is disabled entirely —
 fine for local development, not something to leave on anywhere reachable.
@@ -127,38 +130,45 @@ re-resolving to different versions than what you tested locally.
 
 ## Deploying to Kubernetes
 
-Manifests in `k8s/` assume deployment into the existing `sotongpt` namespace, reusing the
-`postgres-cnpg` cluster already running there (same pattern as the `openwebui` database) rather
-than standing up a separate Postgres instance.
+Manifests in `k8s/` deploy into their own `fasterwhisper` namespace, with a dedicated CNPG cluster
+(`postgres-cnpg`, inside that namespace) for this service's own metadata — separate instances,
+storage, and backup schedule from `openwebui`'s cluster in `sotongpt`, so a problem in one can't
+take down the other. `DATABASE_URL` is sourced directly from that cluster's own auto-generated
+`postgres-cnpg-app` Secret rather than a hand-copied one — one less place for the connection string
+to drift out of sync with the actual database. The only coupling to `openwebui`'s cluster is
+`OPENWEBUI_DATABASE_URL`, a cross-namespace read for API key lookups.
 
-1. On `postgres-cnpg`, create a `fasterwhisper` database/role for this service's own metadata (a
-   CNPG `Database` custom resource, the same way `openwebui`'s database was provisioned).
-2. On the same cluster, create a **read-only** role against the existing `openwebui` database for
-   the API key lookup — the exact grants are commented in `k8s/00-config.yaml`.
-3. Edit `k8s/00-config.yaml` — fill in real `API_KEYS_RAW` (if you need any static keys at all),
-   the `fasterwhisper` role's password in `DATABASE_URL`, and the read-only role's password in
-   `OPENWEBUI_DATABASE_URL`. Don't commit real values; apply this one out-of-band or via a secrets
-   manager.
-4. Edit `k8s/02-deployment.yaml` — set `image:` to your pushed image.
-5. Confirm your cluster actually schedules GPU pods (device plugin installed, correct
+1. Apply the namespace and database cluster, and wait for it to come up:
+   ```bash
+   kubectl apply -f k8s/namespace.yaml
+   kubectl apply -f k8s/cluster.yaml
+   kubectl -n fasterwhisper get cluster postgres-cnpg   # wait for status: Cluster in healthy state
+   ```
+2. Edit `k8s/secret.yaml` — set a real `API_KEYS_RAW` (only if you need static keys at all) and the
+   real password for `OPENWEBUI_DATABASE_URL`. Don't commit real values; apply this one out-of-band
+   or via a secrets manager. Note the comment in that file: this currently reuses the shared
+   `sotongpt` app role, which can read/write all of `openwebui`, not just `api_key` — worth
+   narrowing to a dedicated read-only role scoped to a single view if this needs tightening later.
+3. Edit `k8s/deployment.yaml` — set `image:` to your pushed image/tag if you're not tracking
+   `0.1.0`.
+4. Confirm your cluster actually schedules GPU pods (device plugin installed, correct
    `nodeSelector`/tolerations for your GPU node pool — add these to the Deployment if needed).
-6. Apply:
-
+5. Apply the rest:
    ```bash
-   kubectl apply -f k8s/00-config.yaml
-   kubectl apply -f k8s/01-pvc.yaml
-   kubectl apply -f k8s/02-deployment.yaml
+   kubectl apply -f k8s/configmap.yaml
+   kubectl apply -f k8s/secret.yaml
+   kubectl apply -f k8s/pvc.yaml
+   kubectl apply -f k8s/deployment.yaml
+   kubectl apply -f k8s/service.yaml
    ```
-
-7. Check rollout:
-
+6. Check rollout:
    ```bash
-   kubectl -n sotongpt rollout status deploy/fasterwhisper-api
-   kubectl -n sotongpt logs -f deploy/fasterwhisper-api
+   kubectl -n fasterwhisper rollout status deploy/fasterwhisper
+   kubectl -n fasterwhisper logs -f deploy/fasterwhisper
    ```
-
-8. Check `/health` — its `openwebui_auth` field confirms the read-only connection to Open WebUI's
-   database is actually working (`"ok"`, `"unreachable"`, or `"disabled"` if you skipped it).
+7. Check `/health` — its `openwebui_auth` field confirms the cross-namespace connection to Open
+   WebUI's database is actually working (`"ok"`, `"unreachable"`, or `"disabled"` if you skipped
+   it).
 
 The Deployment uses `strategy: Recreate` rather than the default rolling update, since two pods
 briefly holding the same GPU during a rollout isn't something you want with `nvidia.com/gpu: 1`.
@@ -166,7 +176,7 @@ Expect a short gap in availability on every deploy as a result — fine for an i
 worth knowing about.
 
 No ingress/route is included since that depends on what you're already using in front of
-`openwebui` — add a matching one pointing at the `fasterwhisper-api` Service if you need external
+`openwebui` — add a matching one pointing at the `fasterwhisper` Service if you need external
 access rather than in-cluster only.
 
 ## What's deliberately not here

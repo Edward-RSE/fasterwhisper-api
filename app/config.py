@@ -107,6 +107,32 @@ class Settings(BaseSettings):
     def sync_max_upload_bytes(self) -> int:
         return self.sync_max_upload_mb * 1024 * 1024
 
+    @staticmethod
+    def _as_asyncpg_url(url: str) -> str:
+        """Upgrade a plain `postgresql://` URL to `postgresql+asyncpg://`.
+
+        CNPG's auto-generated app-user Secret (the `uri` key) hands out bare
+        `postgresql://` URLs, which is the right generic default but isn't
+        enough on its own for SQLAlchemy's async engine — without an explicit
+        driver, it defaults to the sync `psycopg2` dialect and refuses to
+        build an AsyncEngine. Normalizing here means DATABASE_URL/
+        OPENWEBUI_DATABASE_URL can point straight at a CNPG-managed secret's
+        `uri` key with no manual rewriting.
+        """
+        if url.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + url[len("postgresql://") :]
+        if url.startswith("postgres://"):
+            return "postgresql+asyncpg://" + url[len("postgres://") :]
+        return url
+
+    @property
+    def database_url_async(self) -> str:
+        return self._as_asyncpg_url(self.database_url)
+
+    @property
+    def openwebui_database_url_async(self) -> str:
+        return self._as_asyncpg_url(self.openwebui_database_url)
+
 
 @lru_cache
 def get_settings() -> Settings:
