@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fasterwhisper-config
+  namespace: fasterwhisper
+data:
+  SERVICE_NAME: "fasterwhisper"
+  ENVIRONMENT: "production"
+  WHISPER_MODEL: "large-v3"
+  WHISPER_DEVICE: "cuda"
+  WHISPER_COMPUTE_TYPE: "float16"
+  WHISPER_DOWNLOAD_ROOT: "/models"
+  WHISPER_NUM_WORKERS: "1"
+  WHISPER_CPU_THREADS: "4"
+  GPU_CONCURRENCY: "1"
+  MAX_UPLOAD_MB: "500"
+  TMP_UPLOAD_DIR: "/tmp/fasterwhisper-uploads"
+  SYNC_MAX_UPLOAD_MB: "25"
+  OPENWEBUI_DB_POOL_SIZE: "2"
+  OPENWEBUI_KEY_CACHE_SECONDS: "30"
+  OPENWEBUI_UPDATE_LAST_USED: "false"
+  DB_POOL_SIZE: "5"
+  DB_ECHO: "false"
+  JOB_RESULT_RETENTION_DAYS: "30"
+  LOG_LEVEL: "INFO"
+  LOG_JSON: "true"

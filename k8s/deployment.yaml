@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fasterwhisper
+  namespace: fasterwhisper
+  labels:
+    app: fasterwhisper-api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # avoids two pods briefly holding the same GPU during a rollout
+  selector:
+    matchLabels:
+      app: fasterwhisper-api
+  template:
+    metadata:
+      labels:
+        app: fasterwhisper-api
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: fasterwhisper-api
+          image: ghcr.io/edward-rse/fasterwhisper-api:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: fasterwhisper-config
+            - secretRef:
+                name: fasterwhisper-secrets
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-cnpg-app
+                  key: uri
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: tmp-uploads
+              mountPath: /tmp/fasterwhisper-uploads
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30 # model load takes a while, especially cold
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            failureThreshold: 60 # up to 10 min to load the model on first boot
+            periodSeconds: 10
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: fasterwhisper-models
+        - name: tmp-uploads
+          emptyDir:
+            sizeLimit: 20Gi

@@ -1,0 +1,15 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-cnpg
+  namespace: fasterwhisper
+spec:
+  imageName: ghcr.io/cloudnative-pg/postgresql:18-minimal-trixie
+  instances: 1
+  bootstrap:
+    initdb:
+      database: fasterwhisper
+      owner: admin
+  storage:
+    size: 10Gi
+    storageClass: longhorn

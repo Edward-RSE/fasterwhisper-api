@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whisper-api-path-ingress
+  namespace: fasterwhisper
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: fasterwhisper-whisper-strip-prefix@kubernetescrd
+spec:
+  tls:
+    - hosts:
+        - sotongpt.soton.ac.uk
+      secretName: srv04885-tls
+  rules:
+    - host: sotongpt.soton.ac.uk
+      http:
+        paths:
+          - path: /whisper
+            pathType: Prefix
+            backend:
+              service:
+                name: fasterwhisper
+                port:
+                  number: 80
