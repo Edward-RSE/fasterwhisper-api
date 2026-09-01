@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class TranscriptionSegment(BaseModel):
@@ -53,3 +53,4 @@ class HealthResponse(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     status: str
+    model: str

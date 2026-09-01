@@ -185,7 +185,7 @@ async def health():
     status_message = "ok" if healthy else "degraded"
     status_code = status_message.HTTP_200_OK if healthy else status_message.HTTP_503_SERVICE_UNAVAILABLE
 
-    return JSONResponse(status_code=status_code, content={"status": status_message})
+    return JSONResponse(status_code=status_code, content={"status": status_message, "model": settings.whisper_model})
 
 
 # --------------------------------------------------------------------------
