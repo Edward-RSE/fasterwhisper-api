@@ -1,8 +1,9 @@
+"""Logging configuration helpers for the service.
+
+The application emits structured JSON logs in production by default so they can
+be ingested by cluster log collectors with minimal post-processing.
 """
-Structured (JSON) logging so logs are easy to query once collected by
-whatever your cluster uses (Loki, ELK, CloudWatch, etc.). Falls back to
-plain text if log_json is False, which is handy when running locally.
-"""
+
 import logging
 import sys
 
@@ -10,12 +11,21 @@ from app.config import Settings
 
 try:
     from pythonjsonlogger import jsonlogger
+
     _HAS_JSON_LOGGER = True
 except ImportError:
     _HAS_JSON_LOGGER = False
 
 
 def configure_logging(settings: Settings) -> None:
+    """Configure the root logger for the current runtime environment.
+
+    Parameters
+    ----------
+    settings : Settings
+        Application settings, including the chosen log level and formatting mode.
+
+    """
     handler = logging.StreamHandler(sys.stdout)
 
     if settings.log_json and _HAS_JSON_LOGGER:

@@ -10,6 +10,8 @@ from app.database import Base
 
 
 class JobStatus(str, enum.Enum):
+    """Lifecycle states that a transcription job may occupy."""
+
     queued = "queued"
     processing = "processing"
     completed = "completed"
@@ -17,17 +19,24 @@ class JobStatus(str, enum.Enum):
 
 
 class RequestMode(str, enum.Enum):
-    sync = "sync"       # OpenAI-compatible /v1/audio/transcriptions
-    async_ = "async"     # /transcriptions job endpoint
+    """Transport mode used when submitting a transcription request."""
+
+    sync = "sync"  # OpenAI-compatible /v1/audio/transcriptions
+    async_ = "async"  # /transcriptions job endpoint
 
 
 class TranscriptionRequest(Base):
-    """One row per transcription request. Used for request tracking/auditing,
-    async job status polling, and basic usage metrics per API key."""
+    """A single row describing one transcription request.
+
+    The record is used for request auditing, async job polling, and basic usage
+    metrics grouped by API key.
+    """
 
     __tablename__ = "transcription_requests"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
 
     # Who / what
     api_key_label: Mapped[str] = mapped_column(String(128), index=True)
@@ -35,7 +44,9 @@ class TranscriptionRequest(Base):
 
     # Request
     mode: Mapped[RequestMode] = mapped_column(Enum(RequestMode, name="request_mode"))
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, name="job_status"), default=JobStatus.queued, index=True)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, name="job_status"), default=JobStatus.queued, index=True
+    )
     original_filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -50,6 +61,12 @@ class TranscriptionRequest(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, index=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, index=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

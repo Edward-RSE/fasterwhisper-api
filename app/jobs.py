@@ -1,5 +1,4 @@
-"""
-Lightweight in-process job queue for long transcriptions.
+"""Lightweight in-process job queue for long transcriptions.
 
 Why not Celery/RQ: the GPU running the model is a single, non-shareable
 resource tied to this pod, and the pod already has an async event loop.
@@ -28,12 +27,25 @@ logger = logging.getLogger("fasterwhisper")
 
 @dataclass
 class Job:
+    """A queued transcription job awaiting background processing."""
+
     job_id: uuid.UUID
     file_path: str
     language: str | None
 
 
 class JobQueue:
+    """Background queue for asynchronous transcription jobs.
+
+    Parameters
+    ----------
+    engine : WhisperEngine
+        The speech-to-text engine used to process queued files.
+    concurrency : int, default=1
+        Number of worker tasks to run concurrently for this queue.
+
+    """
+
     def __init__(self, engine: WhisperEngine, concurrency: int = 1):
         self._engine = engine
         self._concurrency = concurrency
@@ -41,22 +53,48 @@ class JobQueue:
         self._workers: list[asyncio.Task] = []
 
     def qsize(self) -> int:
+        """Return the number of jobs waiting in the queue.
+
+        Returns
+        -------
+        int
+            Approximate number of queued jobs.
+
+        """
         return self._queue.qsize()
 
     async def submit(self, job: Job) -> None:
+        """Queue a transcript job for background processing.
+
+        Parameters
+        ----------
+        job : Job
+            The job to enqueue.
+
+        """
         await self._queue.put(job)
 
     def start(self) -> None:
+        """Start the worker pool for queued jobs."""
         for i in range(self._concurrency):
             self._workers.append(asyncio.create_task(self._worker_loop(i)))
         logger.info("Started %d transcription worker(s)", self._concurrency)
 
     async def stop(self) -> None:
+        """Stop all worker tasks and wait for shutdown to complete."""
         for task in self._workers:
             task.cancel()
         await asyncio.gather(*self._workers, return_exceptions=True)
 
     async def _worker_loop(self, worker_id: int) -> None:
+        """Run the queue-processing loop for a single worker.
+
+        Parameters
+        ----------
+        worker_id : int
+            Identifier used when logging worker activity.
+
+        """
         while True:
             job = await self._queue.get()
             try:
@@ -69,6 +107,16 @@ class JobQueue:
                 self._queue.task_done()
 
     async def _process(self, job: Job, worker_id: int) -> None:
+        """Process a queued job end-to-end.
+
+        Parameters
+        ----------
+        job : Job
+            The queued transcription request.
+        worker_id : int
+            The worker executing the job.
+
+        """
         async with async_session_maker() as session:
             row = await session.get(TranscriptionRequest, job.job_id)
             if row is None:

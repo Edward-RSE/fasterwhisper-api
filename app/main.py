@@ -36,6 +36,19 @@ openwebui_keys = get_openwebui_key_store()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Initialize application state on startup and clean up on shutdown.
+
+    Parameters
+    ----------
+    app : FastAPI
+        The FastAPI application instance.
+
+    Yields
+    ------
+    None
+        The application remains active while the context manager is open.
+
+    """
     os.makedirs(settings.tmp_upload_dir, exist_ok=True)
     await init_db()
     # Model load is blocking and can take a while (esp. large-v3 on a cold PVC) —
@@ -70,6 +83,25 @@ app = FastAPI(
 
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
+    """Log request metadata for non-health traffic.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    call_next : Callable
+        The next ASGI callable in the middleware chain.
+
+    Returns
+    -------
+    Response
+        The response returned by the downstream application.
+
+    """
+    if request.url.path in {"/health", "/health/live"}:
+        response = await call_next(request)
+        return response
+
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
     start = time.monotonic()
@@ -92,8 +124,24 @@ async def request_logging_middleware(request: Request, call_next):
 
 
 async def _save_upload(file: UploadFile) -> tuple[str, int]:
-    """Stream the upload to disk (never buffer the whole thing in memory) and
-    enforce the size cap while doing so. Returns (path, size_bytes)."""
+    """Persist an uploaded file to disk and enforce the configured size limit.
+
+    Parameters
+    ----------
+    file : UploadFile
+        The uploaded audio file.
+
+    Returns
+    -------
+    tuple[str, int]
+        The destination path and the file size in bytes.
+
+    Raises
+    ------
+    HTTPException
+        If the upload exceeds the configured maximum size.
+
+    """
     dest_path = os.path.join(
         settings.tmp_upload_dir, f"{uuid.uuid4()}_{file.filename or 'upload'}"
     )
@@ -123,9 +171,14 @@ async def _save_upload(file: UploadFile) -> tuple[str, int]:
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    """Readiness probe: checks the model is loaded AND the database is reachable.
-    Open WebUI connectivity is reported but doesn't affect readiness — if it's
-    down, static API keys (if configured) still work, so this pod is still useful."""
+    """Report service readiness and dependency health.
+
+    Returns
+    -------
+    JSONResponse
+        The service status, model readiness, DB connectivity, and queue depth.
+
+    """
     db_ok = await db_healthy()
     model_ok = whisper_engine.is_loaded
 
@@ -153,9 +206,14 @@ async def health():
 
 @app.get("/health/live")
 async def liveness():
-    """Liveness probe: just confirms the event loop is responsive. Deliberately
-    does NOT check the DB — a transient DB blip shouldn't cause Kubernetes to
-    kill and restart a pod that's otherwise fine (readiness handles that)."""
+    """Report whether the event loop is still responsive.
+
+    Returns
+    -------
+    dict
+        A minimal liveness payload indicating the service is still alive.
+
+    """
     return {"status": "alive"}
 
 
@@ -172,6 +230,25 @@ async def transcribe_sync(
     language: str | None = None,
     api_key_label: str = Depends(get_api_key_label),
 ):
+    """Transcribe a file via the OpenAI-compatible synchronous API.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    file : UploadFile
+        Audio file uploaded for transcription.
+    language : str or None, default=None
+        Optional source-language hint.
+    api_key_label : str
+        Label derived from the valid API key used to authorize the request.
+
+    Returns
+    -------
+    OpenAITranscriptionResponse
+        The transcription output and metadata.
+
+    """
     file_path, size = await _save_upload(file)
 
     if size > settings.sync_max_upload_bytes:
@@ -253,6 +330,25 @@ async def transcribe_async(
     language: str | None = None,
     api_key_label: str = Depends(get_api_key_label),
 ):
+    """Queue a long-running transcription job for asynchronous processing.
+
+    Parameters
+    ----------
+    request : Request
+        The incoming HTTP request.
+    file : UploadFile
+        Audio file uploaded for background transcription.
+    language : str or None, default=None
+        Optional source-language hint.
+    api_key_label : str
+        Label derived from the valid API key used to authorize the request.
+
+    Returns
+    -------
+    JobSubmitResponse
+        Metadata describing the queued job and polling location.
+
+    """
     file_path, size = await _save_upload(file)
     job_id = uuid.uuid4()
 
@@ -285,6 +381,26 @@ async def transcribe_async(
 async def get_transcription_status(
     job_id: uuid.UUID, api_key_label: str = Depends(get_api_key_label)
 ):
+    """Return the current processing status for a queued transcription job.
+
+    Parameters
+    ----------
+    job_id : uuid.UUID
+        Unique identifier for the transcription job.
+    api_key_label : str
+        Label derived from the valid API key used to authorize the request.
+
+    Returns
+    -------
+    JobStatusResponse
+        The current job status and any available result metadata.
+
+    Raises
+    ------
+    HTTPException
+        If the requested job does not exist.
+
+    """
     async with async_session_maker() as session:
         row = await session.get(TranscriptionRequest, job_id)
 

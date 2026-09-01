@@ -1,6 +1,4 @@
-"""
-Async SQLAlchemy engine/session setup for the request-tracking metadata store.
-"""
+"""Database session and engine setup for the request-tracking metadata store."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -23,28 +21,58 @@ async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
-    pass
+    """Declarative base class for the service's SQLAlchemy metadata models."""
 
 
 async def init_db() -> None:
-    """Create tables if they don't exist. Fine for a single-table app; swap for
-    Alembic migrations if the schema grows or you need zero-downtime changes."""
+    """Create database tables if they do not already exist.
+
+    Notes
+    -----
+    This project keeps schema management intentionally simple for now. For a
+    growing application, replace this with Alembic migrations.
+
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
+    """Yield a database session for dependency injection.
+
+    Yields
+    ------
+    AsyncSession
+        An SQLAlchemy async session scoped to the request lifecycle.
+
+    """
     async with async_session_maker() as session:
         yield session
 
 
 @asynccontextmanager
 async def db_session() -> AsyncIterator[AsyncSession]:
+    """Yield a database session within an async context manager.
+
+    Yields
+    ------
+    AsyncSession
+        A transactional database session for ad hoc work.
+
+    """
     async with async_session_maker() as session:
         yield session
 
 
 async def db_healthy() -> bool:
+    """Check whether the metadata database is reachable.
+
+    Returns
+    -------
+    bool
+        ``True`` when the database responds successfully to a lightweight probe.
+
+    """
     from sqlalchemy import text
 
     try:

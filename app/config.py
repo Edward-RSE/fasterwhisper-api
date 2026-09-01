@@ -1,5 +1,8 @@
-"""
-Configuration, loaded from environment variables (K8s ConfigMap/Secret friendly).
+"""Application configuration loaded from environment variables.
+
+This module keeps deployment settings Kubernetes-friendly by reading from
+standard environment variables and supporting a local ``.env`` file when
+present.
 """
 
 from functools import lru_cache
@@ -8,6 +11,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Runtime configuration for the transcription service.
+
+    Notes
+    -----
+    Values are sourced from environment variables and may be overridden in a
+    local ``.env`` file during development.
+
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
@@ -136,4 +148,12 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return the cached application settings.
+
+    Returns
+    -------
+    Settings
+        The singleton settings object used throughout the application.
+
+    """
     return Settings()

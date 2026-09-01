@@ -1,15 +1,8 @@
-"""
-Bearer-token auth with no user accounts of its own. A token is accepted if
-it's either:
+"""Authentication helpers for bearer-token validation.
 
-1. one of the static pre-shared keys in API_KEYS_RAW (service accounts,
-   internal tooling — anything that isn't an Open WebUI user), or
-2. a live, unexpired API key in Open WebUI's own `api_key` table — so any
-   Open WebUI user's personal API key works here automatically, with no key
-   management on this side at all.
-
-Static keys are checked first (in-memory, no I/O) before falling back to the
-Open WebUI database lookup.
+A token is accepted if it matches either a static pre-shared key or a live,
+non-expired Open WebUI personal API key. Static keys are checked first so the
+common in-memory path remains fast and cheap.
 """
 
 from functools import lru_cache
@@ -25,6 +18,14 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 @lru_cache
 def get_openwebui_key_store() -> OpenWebUIKeyStore:
+    """Return the cached Open WebUI key store singleton.
+
+    Returns
+    -------
+    OpenWebUIKeyStore
+        The singleton helper used to validate Open WebUI-backed API keys.
+
+    """
     return build_key_store(get_settings())
 
 
@@ -38,6 +39,29 @@ async def get_api_key_label(
     settings: Settings = _settings_dependency,
     openwebui_keys: OpenWebUIKeyStore = _openwebui_key_store_dependency,
 ) -> str:
+    """Resolve the label for a valid API key submitted on the request.
+
+    Parameters
+    ----------
+    credentials : HTTPAuthorizationCredentials or None
+        Bearer credentials provided by the client.
+    settings : Settings
+        Runtime configuration describing configured static and Open WebUI keys.
+    openwebui_keys : OpenWebUIKeyStore
+        Cache-backed lookup store for Open WebUI-derived API keys.
+
+    Returns
+    -------
+    str
+        The key label associated with the request, or ``auth-disabled`` when no
+        authentication backend is configured.
+
+    Raises
+    ------
+    HTTPException
+        If the request lacks a valid bearer token.
+
+    """
     # If neither auth source is configured, auth is effectively disabled (local dev).
     if not settings.api_keys and not openwebui_keys.enabled:
         return "auth-disabled"

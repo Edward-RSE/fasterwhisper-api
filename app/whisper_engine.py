@@ -1,11 +1,11 @@
-"""
-Thin wrapper around faster-whisper. The model is loaded once at process
+"""Thin wrapper around faster-whisper. The model is loaded once at process
 startup (see main.py lifespan) and reused for every request — loading it
 per-request would be far too slow to be usable.
 
 faster-whisper's transcribe() is a blocking/CPU+GPU-bound call, so it's always
 run inside a worker thread via asyncio.to_thread to avoid blocking the event loop.
 """
+
 import asyncio
 import logging
 import time
@@ -20,6 +20,8 @@ logger = logging.getLogger("fasterwhisper")
 
 @dataclass
 class TranscriptionResult:
+    """Structured transcription result returned by the model backend."""
+
     text: str
     language: str
     duration: float
@@ -28,11 +30,21 @@ class TranscriptionResult:
 
 
 class WhisperEngine:
+    """Thin wrapper around the faster-whisper model runtime.
+
+    Parameters
+    ----------
+    settings : Settings
+        Runtime configuration for model loading and inference.
+
+    """
+
     def __init__(self, settings: Settings):
         self._settings = settings
         self._model: WhisperModel | None = None
 
     def load(self) -> None:
+        """Load the configured transcription model into memory."""
         logger.info(
             "Loading faster-whisper model",
             extra={
@@ -53,9 +65,27 @@ class WhisperEngine:
 
     @property
     def is_loaded(self) -> bool:
+        """Return whether the underlying model has been loaded."""
         return self._model is not None
 
-    def _transcribe_sync(self, file_path: str, language: str | None) -> TranscriptionResult:
+    def _transcribe_sync(
+        self, file_path: str, language: str | None
+    ) -> TranscriptionResult:
+        """Run transcription synchronously on a temporary audio file.
+
+        Parameters
+        ----------
+        file_path : str
+            The path to the uploaded audio file.
+        language : str or None
+            Optional source-language hint. If omitted, the model infers it.
+
+        Returns
+        -------
+        TranscriptionResult
+            The transcript text, timing metadata, and segment details.
+
+        """
         assert self._model is not None, "Model not loaded"
         start = time.monotonic()
 
@@ -68,7 +98,9 @@ class WhisperEngine:
         segments = []
         text_parts = []
         for seg in segments_iter:
-            segments.append({"start": seg.start, "end": seg.end, "text": seg.text.strip()})
+            segments.append(
+                {"start": seg.start, "end": seg.end, "text": seg.text.strip()}
+            )
             text_parts.append(seg.text.strip())
 
         elapsed = time.monotonic() - start
@@ -80,5 +112,22 @@ class WhisperEngine:
             segments=segments,
         )
 
-    async def transcribe(self, file_path: str, language: str | None = None) -> TranscriptionResult:
+    async def transcribe(
+        self, file_path: str, language: str | None = None
+    ) -> TranscriptionResult:
+        """Transcribe an audio file in a worker thread.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the uploaded audio file.
+        language : str or None, default=None
+            Optional language code to guide recognition.
+
+        Returns
+        -------
+        TranscriptionResult
+            The transcription result including segments and timing metadata.
+
+        """
         return await asyncio.to_thread(self._transcribe_sync, file_path, language)

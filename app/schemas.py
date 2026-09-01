@@ -1,45 +1,55 @@
 import uuid
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class TranscriptionSegment(BaseModel):
+    """A single transcription segment returned by the model."""
+
     start: float
     end: float
     text: str
 
 
 class OpenAITranscriptionResponse(BaseModel):
-    """Shape matches OpenAI's /v1/audio/transcriptions so this endpoint can be
-    dropped straight into Open WebUI's "OpenAI-compatible" STT engine setting."""
+    """Response schema matching OpenAI's transcription API.
+
+    The payload is shaped to be compatible with Open WebUI's OpenAI-style STT
+    provider configuration.
+    """
 
     text: str
-    language: Optional[str] = None
-    duration: Optional[float] = None
-    segments: Optional[list[TranscriptionSegment]] = None
+    language: str | None = None
+    duration: float | None = None
+    segments: list[TranscriptionSegment] | None = None
 
 
 class JobSubmitResponse(BaseModel):
+    """Response returned when a request is accepted into the async queue."""
+
     job_id: uuid.UUID
     status: str
     poll_url: str
 
 
 class JobStatusResponse(BaseModel):
+    """Current status payload for a queued or completed transcription job."""
+
     job_id: uuid.UUID
     status: str
-    original_filename: Optional[str] = None
-    detected_language: Optional[str] = None
-    audio_duration_seconds: Optional[float] = None
-    processing_time_seconds: Optional[float] = None
-    result_text: Optional[str] = None
-    error_message: Optional[str] = None
+    original_filename: str | None = None
+    detected_language: str | None = None
+    audio_duration_seconds: float | None = None
+    processing_time_seconds: float | None = None
+    result_text: str | None = None
+    error_message: str | None = None
     created_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
 
 
 class HealthResponse(BaseModel):
+    """Readiness health payload reported by the service health endpoint."""
+
     model_config = {"protected_namespaces": ()}
 
     status: str

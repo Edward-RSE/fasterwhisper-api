@@ -1,46 +1,8 @@
-"""
-Lets Open WebUI's own personal API keys authenticate against this service —
-no key management here, no shared secret to distribute. Reads Open WebUI's
-api_key table directly (joined to "user" for an email/name label):
+"""Open WebUI-backed API key authentication.
 
-    CREATE TABLE api_key (
-        id TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES "user"(id) ON DELETE CASCADE,
-        key TEXT UNIQUE NOT NULL,
-        data JSON,
-        expires_at BIGINT,     -- epoch seconds, NULL = never expires
-        last_used_at BIGINT,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL
-    );
-
-There's no `is_active`/`enabled` column — a key counts as active if it exists
-and isn't expired. We treat that as the definition of "active" here too.
-
-Currently connects via the shared app role on Open WebUI's database (see
-k8s/secret.yaml), which can read/write everything in that database — not
-just api_key. Worth narrowing later: grant a dedicated read-only role SELECT
-on a single purpose-built view instead of the raw tables, e.g.
-
-    CREATE VIEW fasterwhisper_key_lookup AS
-    SELECT ak.key, ak.user_id, ak.expires_at, u.email, u.name
-    FROM api_key ak
-    LEFT JOIN "user" u ON u.id = ak.user_id;
-
-    GRANT CONNECT ON DATABASE openwebui TO fasterwhisper_ro;
-    GRANT USAGE ON SCHEMA public TO fasterwhisper_ro;
-    GRANT SELECT ON fasterwhisper_key_lookup TO fasterwhisper_ro;
-
-Postgres views run with the view owner's privileges by default, so a role
-scoped to the view would never need direct access to api_key or "user" at
-all — the view's column list becomes the entire contract, immune to whatever
-else Open WebUI's schema does over time. If you switch to this, swap
-_LOOKUP_QUERY below to select from the view instead of joining the tables.
-
-This is a separate database (and, per the recommended setup, a separate CNPG
-cluster) from this service's own `database_url`, which just holds
-transcription_requests. Only a SELECT-level grant is required unless
-openwebui_update_last_used is enabled.
+The service can accept personal API keys created in Open WebUI without managing
+its own user store. A key is considered valid when it exists and has not
+expired, and it is looked up via a short-lived in-memory cache.
 """
 
 import logging
@@ -57,6 +19,17 @@ logger = logging.getLogger("fasterwhisper")
 
 @dataclass
 class OpenWebUIKeyRecord:
+    """A validated Open WebUI key record used for downstream authorization.
+
+    Attributes
+    ----------
+    user_id : str
+        The user identifier in Open WebUI.
+    label : str
+        A user-friendly label derived from the user email or name.
+
+    """
+
     user_id: str
     label: str  # e.g. "openwebui:jane@example.com"
 
@@ -75,9 +48,20 @@ _TOUCH_LAST_USED = text("UPDATE api_key SET last_used_at = :now WHERE key = :key
 
 
 class OpenWebUIKeyStore:
-    """Looks up bearer tokens against Open WebUI's api_key table, with a short
-    in-memory TTL cache so steady traffic doesn't hit that database on every
-    single request. A no-op (lookup always returns None) when unconfigured."""
+    """Look up bearer tokens against the Open WebUI key database.
+
+    Parameters
+    ----------
+    settings : Settings
+        Runtime configuration containing the database connection details and
+        cache TTL settings.
+
+    Notes
+    -----
+    When unconfigured, the store acts as a no-op and returns ``None`` for all
+    lookups.
+
+    """
 
     def __init__(self, settings: Settings):
         self._settings = settings
@@ -97,16 +81,35 @@ class OpenWebUIKeyStore:
 
     @property
     def enabled(self) -> bool:
+        """Return whether Open WebUI key validation is configured.
+
+        Returns
+        -------
+        bool
+            ``True`` when a database connection is configured.
+
+        """
         return self._engine is not None
 
     async def close(self) -> None:
+        """Dispose the underlying database engine, if present."""
         if self._engine is not None:
             await self._engine.dispose()
 
     async def ping(self) -> bool:
-        """Connectivity check for the health endpoint / startup log. Never
-        raises — a database blip here shouldn't take the whole service down,
-        since static API keys (if any) still work independently of this."""
+        """Check whether the Open WebUI database is reachable.
+
+        Returns
+        -------
+        bool
+            ``True`` when a lightweight database probe succeeds.
+
+        Notes
+        -----
+        This method never raises; a database blip should not take down the whole
+        service because static API keys remain viable without this dependency.
+
+        """
         if self._engine is None:
             return False
         try:
@@ -118,6 +121,19 @@ class OpenWebUIKeyStore:
             return False
 
     async def lookup(self, key: str) -> OpenWebUIKeyRecord | None:
+        """Look up an API key in the cache or the Open WebUI database.
+
+        Parameters
+        ----------
+        key : str
+            Bearer token presented by the client.
+
+        Returns
+        -------
+        OpenWebUIKeyRecord or None
+            The user record associated with the key, or ``None`` if it is invalid.
+
+        """
         if self._engine is None:
             return None
 
@@ -131,11 +147,26 @@ class OpenWebUIKeyStore:
         return record
 
     async def _query(self, key: str) -> OpenWebUIKeyRecord | None:
+        """Query the backing database for a matching Open WebUI API key.
+
+        Parameters
+        ----------
+        key : str
+            The bearer token to validate.
+
+        Returns
+        -------
+        OpenWebUIKeyRecord or None
+            The matched key if it is still valid, otherwise ``None``.
+
+        """
         assert self._engine is not None
         now_epoch = int(time.time())
         try:
             async with self._engine.connect() as conn:
-                result = await conn.execute(_LOOKUP_QUERY, {"key": key, "now": now_epoch})
+                result = await conn.execute(
+                    _LOOKUP_QUERY, {"key": key, "now": now_epoch}
+                )
                 row = result.mappings().first()
         except Exception:
             logger.exception("Error querying Open WebUI database for API key lookup")
@@ -151,6 +182,16 @@ class OpenWebUIKeyStore:
         return OpenWebUIKeyRecord(user_id=row["user_id"], label=f"openwebui:{label}")
 
     async def _touch_last_used(self, key: str, now_epoch: int) -> None:
+        """Update the key's last-used timestamp when configured to do so.
+
+        Parameters
+        ----------
+        key : str
+            The key whose timestamp should be updated.
+        now_epoch : int
+            The current UNIX time in seconds.
+
+        """
         assert self._engine is not None
         try:
             async with self._engine.begin() as conn:
@@ -158,8 +199,23 @@ class OpenWebUIKeyStore:
         except Exception:
             # Non-fatal: auth already succeeded on the SELECT above. Most likely
             # cause is a read-only DB grant, which is the recommended setup.
-            logger.warning("Could not update last_used_at on Open WebUI api_key", exc_info=True)
+            logger.warning(
+                "Could not update last_used_at on Open WebUI api_key", exc_info=True
+            )
 
 
 def build_key_store(settings: Settings) -> OpenWebUIKeyStore:
+    """Construct a configured Open WebUI key store.
+
+    Parameters
+    ----------
+    settings : Settings
+        Application settings to use when initializing the key store.
+
+    Returns
+    -------
+    OpenWebUIKeyStore
+        The initialized store, ready to validate bearer tokens.
+
+    """
     return OpenWebUIKeyStore(settings)
