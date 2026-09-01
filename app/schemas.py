@@ -53,13 +53,3 @@ class HealthResponse(BaseModel):
     model_config = {"protected_namespaces": ()}
 
     status: str
-    model_loaded: bool
-    database_connected: bool
-    openwebui_auth: str = Field(
-        description='"disabled", "ok", or "unreachable" — whether Open WebUI-backed API key lookup is configured and working'
-    )
-    device: str
-    model: str
-    queue_depth: int = Field(
-        description="Number of async jobs currently queued or processing"
-    )

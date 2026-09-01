@@ -168,44 +168,8 @@ async def _save_upload(file: UploadFile) -> tuple[str, int]:
 # Health
 # --------------------------------------------------------------------------
 
-
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    """Report service readiness and dependency health.
-
-    Returns
-    -------
-    JSONResponse
-        The service status, model readiness, DB connectivity, and queue depth.
-
-    """
-    db_ok = await db_healthy()
-    model_ok = whisper_engine.is_loaded
-
-    if not openwebui_keys.enabled:
-        openwebui_status = "disabled"
-    else:
-        openwebui_status = "ok" if await openwebui_keys.ping() else "unreachable"
-
-    body = HealthResponse(
-        status="ok" if (db_ok and model_ok) else "degraded",
-        model_loaded=model_ok,
-        database_connected=db_ok,
-        openwebui_auth=openwebui_status,
-        device=settings.whisper_device,
-        model=settings.whisper_model,
-        queue_depth=job_queue.qsize(),
-    )
-    status_code = (
-        status.HTTP_200_OK
-        if (db_ok and model_ok)
-        else status.HTTP_503_SERVICE_UNAVAILABLE
-    )
-    return JSONResponse(status_code=status_code, content=body.model_dump())
-
-
-@app.get("/health/live")
-async def liveness():
     """Report whether the event loop is still responsive.
 
     Returns
@@ -214,7 +178,14 @@ async def liveness():
         A minimal liveness payload indicating the service is still alive.
 
     """
-    return {"status": "alive"}
+    db_ok = await db_healthy()
+    model_ok = whisper_engine.is_loaded
+    healthy = db_ok and model_ok
+
+    status_message = "ok" if healthy else "degraded"
+    status_code = status_message.HTTP_200_OK if healthy else status_message.HTTP_503_SERVICE_UNAVAILABLE
+
+    return JSONResponse(status_code=status_code, content={"status": status_message})
 
 
 # --------------------------------------------------------------------------
