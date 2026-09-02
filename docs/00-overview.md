@@ -12,7 +12,6 @@ itself, see the top-level `README.md` instead — these docs are about *using* a
    /transcriptions/{job_id}`
 5. [Errors and limits](05-errors-and-limits.md) — status codes, size limits, what to do about them
 6. [Examples](06-examples.md) — complete curl and Python scripts for both transcription flows
-7. [Open WebUI integration](07-open-webui-integration.md) — wiring this up as Open WebUI's speech-to-text engine
 
 ## Base URL
 
