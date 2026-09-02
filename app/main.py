@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from app.auth import get_api_key_label, get_openwebui_key_store
 from app.config import get_settings
@@ -32,6 +33,17 @@ configure_logging(settings)
 whisper_engine = WhisperEngine(settings)
 job_queue = JobQueue(whisper_engine, concurrency=settings.gpu_concurrency)
 openwebui_keys = get_openwebui_key_store()
+
+http_requests_total = Counter(
+    "fasterwhisper_http_requests_total",
+    "Total number of HTTP requests handled by the API.",
+    ["method", "path", "status"],
+)
+http_request_duration_seconds = Histogram(
+    "fasterwhisper_http_request_duration_seconds",
+    "HTTP request duration in seconds.",
+    ["method", "path"],
+)
 
 
 @asynccontextmanager
@@ -98,7 +110,7 @@ async def request_logging_middleware(request: Request, call_next):
         The response returned by the downstream application.
 
     """
-    if request.url.path in {"/health", "/health/live"}:
+    if request.url.path in {"/health", "/health/live", "/metrics"}:
         response = await call_next(request)
         return response
 
@@ -110,14 +122,21 @@ async def request_logging_middleware(request: Request, call_next):
         response = await call_next(request)
         return response
     finally:
+        route = request.scope.get("route")
+        path = getattr(route, "path", request.url.path)
+        if path.startswith("/transcriptions/"):
+            path = "/transcriptions/{job_id}"
         elapsed_ms = (time.monotonic() - start) * 1000
+        status_code = getattr(response, "status_code", 500)
+        http_requests_total.labels(request.method, path, status_code).inc()
+        http_request_duration_seconds.labels(request.method, path).observe(elapsed_ms / 1000)
         logger.info(
             "request handled",
             extra={
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
-                "status_code": getattr(response, "status_code", 500),
+                "status_code": status_code,
                 "duration_ms": round(elapsed_ms, 1),
             },
         )
@@ -186,6 +205,12 @@ async def health():
     status_code = status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE
 
     return JSONResponse(status_code=status_code, content={"status": status_message, "model": settings.whisper_model})
+
+
+@app.get("/metrics")
+async def metrics():
+    """Expose application metrics in Prometheus exposition format."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # --------------------------------------------------------------------------
