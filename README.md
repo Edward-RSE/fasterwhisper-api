@@ -9,7 +9,6 @@ A FastAPI wrapper around [faster-whisper](https://github.com/SYSTRAN/faster-whis
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /health` | Readiness — checks model loaded + DB reachable. Returns 503 if either is down. |
-| `GET /health/live` | Liveness — just confirms the process is responsive (used by K8s so a slow DB doesn't cause a restart loop). |
 | `GET /metrics` | Prometheus exposition endpoint for a Kubernetes PodMonitor or ServiceMonitor. No API key required. |
 | `POST /v1/audio/transcriptions` | Synchronous, **OpenAI-compatible** — same request/response shape as OpenAI's endpoint. Rejects files over `SYNC_MAX_UPLOAD_MB` (default 25MB) with a hint to use the async endpoint instead. |
 | `POST /transcriptions` | Asynchronous — accepts the file, returns `202` with a `job_id` immediately, and processes it in the background. Use this for long recordings. |
