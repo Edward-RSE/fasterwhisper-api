@@ -22,7 +22,7 @@ spec:
       containers:
         - name: fasterwhisper-api
           image: ghcr.io/edward-rse/fasterwhisper-api:0.1.0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
               name: http
@@ -60,14 +60,14 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health/live
+              path: /health
               port: 8000
             initialDelaySeconds: 60
             periodSeconds: 15
             failureThreshold: 5
           startupProbe:
             httpGet:
-              path: /health/live
+              path: /health
               port: 8000
             failureThreshold: 60 # up to 10 min to load the model on first boot
             periodSeconds: 10
